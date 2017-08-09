@@ -1,191 +1,84 @@
--- DreamCore indev 0.1
--- Foundation of the Dream Elements system
-dreamCore = {
-  public:       {}
-  internal:     {}
-}
+-- Dream Elements | DreamServer/DreamCore.moon
+-- DreamCore ver 0.1 indev
+--
+-- Responsible for providing a universal structure on both Server and Clients.
+--
+-- Changelog:
+-- [indev 8917]
+--    # Implemented ComponentsManager
 
 
--- dreamConfig
--- Internal developer settings responsible for activating developer stuff. Does nothing useful unless
--- you're modding the system.
-with dreamConfig = {}
-  dreamCore.internal.dreamConfig = dreamConfig
-
-  -- dreamConfig.debug
-  -- Control various features of the internal debugger
-  dreamConfig.debug = {
-    printEnabled:         true
-    debugModeEnabled:     true
-  }
+dreamCore = {}
+internalResources = {}  -- used by modules to securely share/store internal API
 
 
-  -- dreamConfig.versioning
-  -- Responsible for telling our Update server what version we're running. It's advised
-  -- you don't mess with these settings unless you are modding Dream Elements.
-  dreamConfig.versioning = {
-    updateBranch:         "indev"
-    major:                "0"
-    minor:                "1.0"
-    operatingType:        game\GetService("RunService")\IsServer! == true and "Server" or game\GetService("RunService")\IsStudio! and "Studio" or "Client"
-  }
+do
+  componentsManager = {}
+
+  -- variables
+  installedComponents = {}  -- contains all "installed" modules
+  installedComponentsLookup = setmetatable {}, {__mode: "v"}  -- lookup reference for installed modules
+  coreComponents = script\WaitForChild "Components"\GetChildren
 
 
--- Enums and EnumsManager
--- Responsible for providing Dream Elements with clean code through Enumeration
-with enums, enumsManager = {}, {}
-  dreamCore.internal.enums = enums
-  dreamCore.internal.enumsManager = enumsManager
+    -- register all of our modules
+  for _, component in next, coreComponents
+    assert component.ClassName == "ModuleScript", "[DreamCore.ComponentsManager ERROR] Expected #{component\GetFullName!} to be of Class ModuleScript, got #{component.ClassName}"
+
+    componentProxy = require component\Clone!
+    componentProxy\setup dreamCore, internalResources
+    table.insert installedComponents, componentProxy
+    installedComponentsLookup[component] = {componentProxy, #installedComponents}
+    print "[DreamCore.ComponentsManager] Installed CoreComponent #{component.Name}"
 
 
-  -- Enum createEnum (string name, table values)
-  -- Creates a new Enum datatype and returns it
-  enumsManager.createEnum = (name, values) ->
-    if dreamCore.internal.dreamConfig.debug.debugModeEnabled
-      assert typeof name == "string", "bad argument 1 (string expected, got #{typeof name})"
-      assert typeof values == "table", "bad argument 2 (table expected, got #{typeof values})"
+  -- ComponentsManager:installComponent(Instance component, boolean setupNow = false)
+  -- Installs an Component to DreamCore
+  componentsManager.installComponent = (component, setupNow = false) =>
+    dreamCore.DebugTools\checkType component, "Instance"
+    dreamCore.DebugTools\checkType setupNow, "boolean"
+    dreamCore.DebugTools\assert component.ClassName == "ModuleScript", "Bad argument #1 (RBXClass ModuleScript expected, got #{component.ClassName})"
+
+    componentProxy = require component\Clone!
+    componentProxy\setup dreamCore, internalResources
+    table.insert installedComponents, {componentProxy, #installedComponents}
+    installedComponentsLookup[component] = componentProxy
+    dreamCore.DebugTools\output "Installed Component #{componentProxy\GetInstance ().Name}"
 
 
-    enumType = {}
-    enumTypeProxy = newproxy true
-    enumTypeProxyMetatable = getmetatable enumTypeProxy
+  -- ComponentsManager:uninstallComponent(Instance component)
+  -- Cleans up and removes an Component from DreamCore
+  componentsManager.uninstallComponent = (component) =>
+    dreamCore.DebugTools\checkType component, "Instance"
+    dreamCore.DebugTools\assert component.ClassName == "ModuleScript", "Bad argument #1 (RBXClass ModuleScript expected, got #{component.ClassName})"
 
-    for key, value in next, values
-      enumObjectProxy = newproxy true
-      enumObjectProxyMetatable = getmetatable enumObjectProxyMetatable
+    componentProxy = installedComponentsLookup[components][1] assert componentProxy, "This Component was never installed."
+    if typeof componentProxy.uninstall == "function"
+      -- TODO: implement some type of security checkpoint, as this is a vurnability af.
+      componentProxy\uninstall!
 
-      enumObjectProxyMetatable.__index = {
-        Value: key
-        Parent: enumTypeProxy
-      }
-      enumObjectProxyMetatable.__tostring = () =>
-        "#{name}.#{key}"
-      enumObjectProxyMetatable.__metatable = "This metatable is locked"
-      enumType[key] = enumObjectProxy
-
-    enumTypeProxyMetatable.__index = enumType
-    enumTypeProxyMetatable.__metatable = "This metatable is locked"
-    enums[name] = enumTypeProxy
-
-    enumTypeProxy
+    table.remove installedComponents, installedComponentsLookup[2]
+    dreamCore.DebugTools\output "Uninstalled Component #{componentProxy\GetInstance ().Name}"
 
 
--- debugTools
--- Internal tools designed to assist with debugging issues within Dream Elements
-with debugTools = {}
-  dreamCore.internal.debugTools = debugTools
-
-
-  -- debugTools.checkType (vararg value, number position, string expectedType)
-  -- If debugMode is enabled, will check to see if the type of value matches expectedType
-  debugTools.checkType = (value, position, expectedType) =>
-    if dreamCore.internal.dreamConfig.debug.debugModeEnabled
-      assert typeof position == "number", "bad argument 2 (number expected, got #{typeof position})"
-      assert typeof expectedType == "string", "bad argument 3 (string expected, got #{typeof expectedType})"
-
-      if not typeof value == expectedType
-        error "bad argument #{position} (#{expectedType} expected, got #{typeof value})", 2
-
-
-  -- debugTools.output (string message, boolean includeTraceback)
-  -- If debugMode is enabled, will send message to the output and an optional traceback
-  debugTools.output = (message, includeTraceback = false) =>
-    if dreamCore.internal.dreamConfig.debug.debugModeEnabled
-      debugTools\checkType message, "string"
-      debugTools\checkType includeTraceback, "boolean"
-
-
-      print "Dream#{dreamCore.internal.dreamConfig.versioning.operatingType} DEBUG:\n#{message}\n#{includeTraceback and .. debug.traceback! .."\n\n".. or .."\n"}"
-
-
-  -- debugTools.nonblockingError (string message, number level)
-  -- Throws an error without stopping execution
-  debugTools.nonblockingError = (message, level = 2) =>
-    debugTools\checkType message, "string"
-    debugTools\checkType level, "number"
-
-
-    spawn ->
-      error message, level + 1
+    -- ComponentManager proxy thing
+    proxy = newproxy true
+    proxyMetatable = getmetatable proxy
+    proxyMetatable.__index = componentsManager
+    proxyMetatable.__tostring = -> "DreamCore.ComponentsManager"
+    proxyMetatable.__metatable = "The metatable is locked"
+    internalResources.componentsManager = proxy
 
 
 
-----------------------------------------------
------ !!! WARNING !!! ------------------------
------ Old source beyond this point -----------
------ Will soon be rewritten -----------------
------ That is all ----------------------------
-----------------------------------------------
+-- DreamCore proxy
+proxy = newproxy true
+proxyMetatable = getmetatable proxy
+proxyMetatable.__call = () =>
+  if internalResources.CoreGuard\isEnabled!
+    internalResources.CoreGuard\requireAuthenication!
 
-
--- componentsManager
--- Responsible for managing + organizing code, enforcing sandboxing, authenication requirements, and in-game updates.
-with dreamCore.internal.componentsManager = {}
-  installedComponents       = {}
-  localStorage              = {}
-  activeThreads             = {}
-
-
-  -- authenicationManager
-  -- Responsible for enforcing authenication requirement for protected API
-  authenicationManager = {}
-  do
-    authenicatedThreads         = setmetatable {}, {__mode: "k"}
-    authenicationGrantedEnum    = newproxy!
-    rootThread                  = coroutine.running!
-
-
-    -- void authenicotionManager.RequireAuthenication ()
-    -- Enforces that the calling thread is authorized with the System before continuing execution.
-    authenicationManager.RequireAuthenication = () =>
-      if not authenicatedThreads[coroutine.running!]
-        error "Error occurred, no output from Lua.", 0
-
-
-    -- void authenicationManager.AuthenicateThread (thread thread)
-    -- Authenicates the provided thread with the System
-    authenicationManager.AuthenicateThread = (thread) =>
-      if dreamConfig.debug.debugModeEnabled
-        assert typeof thread == "thread", "bad argument #1 (thread expected, got #{typeof thread})"
-
-
-      authenicatedThreads[thread] = authenicationGrantedEnum
-
-
-    -- boolean authenicationManager.IsThreadAuthenicated ()
-    -- Returns whether the thread is authenicated or not
-    authenicationManager.IsThreadAuthenicated = () =>
-      authenicatedThreads[coroutine.running!] == authenicationGrantedEnum and true or false
-
-
-    -- manually authenicate the root thread
-    authenicatedThreads[rootThread] = authenicationGrantedEnum
-    dreamCore.internal.debug.output "authenicated root thread!"
-
-
-  -- sandboxManager
-  -- Responsible for sandboxing the various components of dreamCore
-  sandboxManager = {}
-  do
-    sandboxCache          = {}
-
-    -- sandboxConfig
-    -- Global settings which effect all sandbox containers
-    sandboxConfig     = {}
-    do
-      -- sandboxConfig.blockedObjects
-      -- Objects which are blocked across all sandboxes
-      sandboxConfig.blockedObjects          = {
-
-      }
-
-
-      -- sandboxConfig.lockedInstances
-      -- Instances which can be interacted with, but not destroyed
-      sandboxConfig.lockedInstances         = {
-
-      }
-
-
-      -- sandboxConfig.classModifier
-      -- Allows you to directly modify a ROBLOX class, performing various checks
+  dreamCore
+proxyMetatable.__tostring = -> "DreamCore.ComponentsManager"
+proxyMetatable.__metatable = "The metatable is locked"
+proxy
