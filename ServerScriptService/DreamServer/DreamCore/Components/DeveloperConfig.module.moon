@@ -46,6 +46,7 @@ api.getSetting = (path) =>
   for split in string.gmatch path, "%w+"
     result = result[split]
 
+  result
 
 
 
