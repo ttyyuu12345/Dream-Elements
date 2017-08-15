@@ -1,0 +1,15 @@
+--[[
+  Name: Dream.lib.lua
+  Purpose: To contain crucial external libraries used in DreamCore
+]]--
+local proxy = newproxy(true)
+local mt = getmetatable(proxy)
+mt.__index = {
+  Registry = require(981464394),
+}
+mt.__newindex = function(self,k,v)
+	return error("table is locked",2)
+end
+mt.__tostring =  function() return "DreamCore.lib" end
+mt.__metatable = "This metatable is locked."
+return proxy
